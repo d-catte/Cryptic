@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 cli-prompts = "0.1.0"
-press-btn-continue = "0.2.0"
 rand = "0.8.5"
 num-bigint = { version = "0.4.6", features = ["rand"] }
 num-rational = "0.4.2"

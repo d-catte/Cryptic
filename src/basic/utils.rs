@@ -8,8 +8,11 @@ use rayon::prelude::*;
 
 pub static TWO: LazyLock<BigUint> = LazyLock::new(|| BigUint::from(2_u32));
 pub static THREE: LazyLock<BigUint> = LazyLock::new(|| BigUint::from(3_u32));
+pub static THREE_BI: LazyLock<BigInt> = LazyLock::new(|| BigInt::from(3_u32));
+pub static FOUR: LazyLock<BigUint> = LazyLock::new(|| BigUint::from(4_u32));
 pub static FIVE: LazyLock<BigUint> = LazyLock::new(|| BigUint::from(5_u32));
 pub static SIX: LazyLock<BigUint> = LazyLock::new(|| BigUint::from(6_u32));
+pub static SEVEN_BI: LazyLock<BigInt> = LazyLock::new(|| BigInt::from(7_u32));
 
 const SMALL_PRIMES: [u64; 32] = [
     3,5,7,11,13,17,19,23,29,31,
@@ -479,7 +482,7 @@ pub fn find_primitive(n: &BigUint, greater_than: &BigUint) -> BigUint {
 }
 
 /// Recursive Extended Euclidean Algorithm
-fn gcd_extended(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
+pub fn gcd_extended(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
     if a.is_zero() {
         return (b.clone(), BigInt::zero(), BigInt::one());
     }
@@ -511,4 +514,161 @@ pub fn chinese_remainder_theorem(num: &[BigInt], modulo: &[BigInt]) -> BigInt {
     }
 
     ((result % &prod) + &prod) % &prod
+}
+
+/// Generates a random prime that follows 3 mod 4
+pub fn blum_prime_generator(bits: u64) -> BigUint {
+    let mut rng = rand::thread_rng();
+
+    let mut candidate = rng.gen_biguint(bits);
+    // Force correct bit size
+    candidate.set_bit(bits - 1, true);
+
+    // Force 3 mod 4
+    candidate |= &*THREE;
+
+    loop {
+        // Small prime filter
+        let mut divisible = false;
+        for p in SMALL_PRIMES {
+            if (&candidate % p).is_zero() {
+                divisible = true;
+                break;
+            }
+        }
+
+        if divisible {
+            candidate.add_assign(&*FOUR);
+            continue;
+        }
+
+        if is_probably_prime(&candidate, 40) {
+            return candidate;
+        }
+
+        // Add 4 to find next value
+        candidate.add_assign(&*FOUR);
+    }
+}
+
+/// Doubles the length of the message binary for use in the Chinese Remainder Theorem
+pub fn extend_binary(bytes: &[u8]) -> Vec<u8> {
+    bytes.repeat(2)
+}
+
+/// Recovers the original message from an extended binary
+pub fn from_extended_binary(bytes: &[u8]) -> &[u8] {
+    &bytes[..bytes.len() / 2]
+}
+
+/// Tests if the first half and second half of the Chinese Remainder Theorem output are equal
+pub fn is_crt_output(bytes: &[u8]) -> bool {
+    if bytes.len() % 2 != 0 {
+        return false;
+    }
+
+    let half = bytes.len() / 2;
+    bytes[..half] == bytes[half..]
+}
+
+/// Converts a negative value into a positive value modulo m
+pub fn mod_floor(num: &BigInt, modulo: &BigInt) -> BigUint {
+    let mut val = num % modulo;
+    if val < BigInt::zero() {
+        val += modulo;
+    }
+    val.to_biguint().unwrap()
+}
+
+/// Generates a random value below n that follows gcd(y, n) == 1
+pub fn random_unit_mod_n(n: &BigUint) -> BigUint {
+    loop {
+        let y = rand::thread_rng().gen_biguint_below(n);
+
+        if y.is_zero() {
+            continue;
+        }
+
+        let gcd = gcd(n, &y);
+        if gcd.is_one() {
+            return y;
+        }
+    }
+}
+
+/// Converts an int to a little-endian bit array (LSB first)
+pub fn u8_to_bits_le(n: u8) -> [u8; 8] {
+    let mut bits = [0u8; 8];
+    for i in 0..8 {
+        bits[i] = (n >> i) & 1;
+    }
+    bits
+}
+
+/// Converts a little-endian bit array (LSB first) back to u8
+pub fn bits_to_u8_le(bits: [u8; 8]) -> u8 {
+    let mut val = 0u8;
+    for i in 0..8 {
+        val |= (bits[i] & 1) << i;
+    }
+    val
+}
+
+/// Concatenates BigUInts bits together in a larger BigUInt
+pub fn concat_biguints(values: &[BigUint]) -> BigUint {
+    let mut combined_bytes = Vec::new();
+
+    for v in values {
+        let bytes = v.to_bytes_le();
+        combined_bytes.extend(bytes);
+    }
+
+    BigUint::from_bytes_be(&combined_bytes)
+}
+
+/// Computes the Jacobi Symbol of (a/n)
+pub fn jacobi(a: &BigInt, n: &BigInt) -> i32 {
+    let mut a_mut = a.clone();
+    let mut n_mut = n.clone();
+    let mut multiplier = 1;
+    println!("{} * {}/{}", multiplier, a_mut, n_mut);
+    loop {
+        // Check if a > n
+        if &a_mut > &n_mut {
+            a_mut = &a_mut % &n_mut;
+            println!("{} * {}/{}", multiplier, a_mut, n_mut);
+        }
+
+        if &a_mut == &BigInt::one() {
+            // Check if numerator is 1
+            return multiplier;
+        } else if &a_mut % 2 == BigInt::one() {
+            // Check reciprocity rules
+            let a_mod = &a_mut % 4;
+            let n_mod = &n_mut % 4;
+            if &a_mod != &BigInt::one() && &n_mod != &BigInt::one() {
+                multiplier *= -1;
+            }
+
+            // Swap places
+            swap(&mut a_mut, &mut n_mut);
+
+        } else {
+            // Factor out 2s
+            a_mut = &a_mut / 2;
+            let modulo = &n_mut % 8;
+            if &a_mut > &BigInt::one() {
+                println!("{} * 2/{} * {}/{}", multiplier, n_mut, a_mut, n_mut);
+            }
+
+            if modulo != BigInt::one() && modulo != *SEVEN_BI {
+                multiplier *= -1;
+            }
+
+            if a_mut == BigInt::one() {
+                return multiplier;
+            }
+        }
+        println!("{} * {}/{}", multiplier, a_mut, n_mut);
+    }
 }
