@@ -1,8 +1,8 @@
 use crate::basic::utils;
+use crate::basic::utils::{FOUR, TWO, is_coprime};
 use num_bigint::{BigUint, RandBigInt, ToBigInt};
-use std::ops::{Add, Mul};
 use num_traits::One;
-use crate::basic::utils::{is_coprime, FOUR, TWO};
+use std::ops::{Add, Mul};
 
 /// Encrypts the bits of a String using a linear formula
 pub fn affine_encryption(input: &BigUint, m: &BigUint, b: &BigUint, modulus: &BigUint) -> BigUint {
@@ -11,7 +11,13 @@ pub fn affine_encryption(input: &BigUint, m: &BigUint, b: &BigUint, modulus: &Bi
 }
 
 /// Decrypts the bits of an encrypted String using an inversed linear formula
-pub fn affine_decryption(input: &BigUint, m: &BigUint, b: &BigUint, modulus: &BigUint, debug: bool) -> BigUint {
+pub fn affine_decryption(
+    input: &BigUint,
+    m: &BigUint,
+    b: &BigUint,
+    modulus: &BigUint,
+    debug: bool,
+) -> BigUint {
     let inv_b = utils::wrapping_neg(b, modulus);
     if let Some(inv_m) = utils::extended_euclidean_algorithm(modulus, m) {
         let decrypted_b = inv_b.mul(&inv_m) % modulus;
@@ -25,22 +31,22 @@ pub fn affine_decryption(input: &BigUint, m: &BigUint, b: &BigUint, modulus: &Bi
 }
 
 /// Gets the modulus for Affine Encryption based on the String length (in bits)
-pub fn get_affine_modulus(input: &String) -> BigUint {
+pub fn get_affine_modulus(input: &str) -> BigUint {
     let bit_size = input.len() * 8;
     BigUint::one() << bit_size
 }
 
 /// Encrypts the plaintext by adding a repeated key to the UTF-8 value of each character
-pub fn vigenere_encryption(mut input_chars: &mut Vec<char>, key_chars: &Vec<char>) -> String {
+pub fn vigenere_encryption(input_chars: &mut [char], key_chars: &[char]) -> String {
     // Create cipher by adding strings
-    add_strings(&mut input_chars, &key_chars);
-    chars_to_str(&input_chars)
+    add_strings(input_chars, key_chars);
+    chars_to_str(input_chars)
 }
 
 /// Decrypts the plaintext by subtracting a repeated key's UTF-8 value from each character
-pub fn vigenere_decryption(mut input_chars: &mut Vec<char>, key_chars: &Vec<char>) -> String {
-    sub_strings(&mut input_chars, &key_chars);
-    chars_to_str(&input_chars)
+pub fn vigenere_decryption(input_chars: &mut [char], key_chars: &[char]) -> String {
+    sub_strings(input_chars, key_chars);
+    chars_to_str(input_chars)
 }
 
 /// str1 is the plaintext and str2 is the key
@@ -68,7 +74,7 @@ fn chars_to_str(chars: &[char]) -> String {
 
 /// Encrypts an integer using RSA encryption
 pub fn rsa_encrypt(m: &BigUint, debug: bool) -> (BigUint, BigUint, BigUint) {
-    let (p, q, n) = generate_rsa_primes(&m);
+    let (p, q, n) = generate_rsa_primes(m);
     let phi = (&p - BigUint::one()) * (&q - BigUint::one());
     let e = generate_coprime(&phi);
     if debug {
@@ -89,7 +95,7 @@ pub fn rsa_encrypt(m: &BigUint, debug: bool) -> (BigUint, BigUint, BigUint) {
 /// Decrypts an RSA encryption
 pub fn rsa_decrypt(c: &BigUint, d: &BigUint, n: &BigUint) -> BigUint {
     // Decrypt text
-    c.modpow(&d, &n)
+    c.modpow(d, n)
 }
 
 /// Generates the primes p and q, and also calculates N
@@ -163,7 +169,7 @@ pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
     assert!(m_original < n, "n is too small!");
 
     // Encryption
-    let c = m_original.modpow(&*TWO, &n);
+    let c = m_original.modpow(&TWO, &n);
 
     // Decryption
     // EEA
@@ -203,7 +209,6 @@ pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
         return (c, output);
     }
 
-
     let d3 = (&y_p * &p * &q1) + (&y_q * &q * &p2);
     let d3 = utils::mod_floor(&d3, &n);
     println!("d3 is {}", d3);
@@ -230,7 +235,7 @@ pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
 /// This cryptosystem is rarely used as the encrypted data is often significantly larger than
 /// the inputted data, which can cause issues when sending data over the internet.
 pub fn goldwasser_micali(input: &[u8]) -> (BigUint, String) {
-    let m_original = BigUint::from_bytes_le(&input);
+    let m_original = BigUint::from_bytes_le(input);
 
     // Choose N so that m_original < n
     let m_bits = m_original.bits();
@@ -251,17 +256,13 @@ pub fn goldwasser_micali(input: &[u8]) -> (BigUint, String) {
         let bits = utils::u8_to_bits_le(*byte);
         for &bit in &bits {
             let y = utils::random_unit_mod_n(&n);
-            let x_pow = if bit == 0 {
-                BigUint::one()
-            } else {
-                x.clone()
-            };
+            let x_pow = if bit == 0 { BigUint::one() } else { x.clone() };
             encrypted.push((y.modpow(&2u32.into(), &n) * x_pow) % &n);
         }
     }
 
     // Visual representation only
-    let encrypted_val = utils::concat_biguints(&*encrypted);
+    let encrypted_val = utils::concat_biguints(&encrypted);
 
     // Decryption
     let mut bytes: Vec<u8> = Vec::new();
@@ -270,7 +271,8 @@ pub fn goldwasser_micali(input: &[u8]) -> (BigUint, String) {
 
     for c in &encrypted {
         let bit = if c.modpow(&((&p - BigUint::one()) / 2u32), &p) == BigUint::one()
-            && c.modpow(&((&q - BigUint::one()) / 2u32), &q) == BigUint::one() {
+            && c.modpow(&((&q - BigUint::one()) / 2u32), &q) == BigUint::one()
+        {
             0
         } else {
             1

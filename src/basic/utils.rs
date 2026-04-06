@@ -1,10 +1,10 @@
 use num_bigint::{BigInt, BigUint, RandBigInt, ToBigInt};
 use num_rational::BigRational;
 use num_traits::{One, Signed, ToPrimitive, Zero};
+use rayon::prelude::*;
 use std::mem::swap;
 use std::ops::{AddAssign, Div, Mul, Sub};
 use std::sync::LazyLock;
-use rayon::prelude::*;
 
 pub static TWO: LazyLock<BigUint> = LazyLock::new(|| BigUint::from(2_u32));
 pub static THREE: LazyLock<BigUint> = LazyLock::new(|| BigUint::from(3_u32));
@@ -15,21 +15,19 @@ pub static SIX: LazyLock<BigUint> = LazyLock::new(|| BigUint::from(6_u32));
 pub static SEVEN_BI: LazyLock<BigInt> = LazyLock::new(|| BigInt::from(7_u32));
 
 const SMALL_PRIMES: [u64; 32] = [
-    3,5,7,11,13,17,19,23,29,31,
-    37,41,43,47,53,59,61,67,
-    71,73,79,83,89,97,
-    101,103,107,109,113,127,131,137
+    3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
+    101, 103, 107, 109, 113, 127, 131, 137,
 ];
 
 const WHEEL_RESIDUES: [u64; 8] = [1, 7, 11, 13, 17, 19, 23, 29];
-const WHEEL_STEPS: [u64; 8] = [6,4,2,4,2,4,6,2];
+const WHEEL_STEPS: [u64; 8] = [6, 4, 2, 4, 2, 4, 6, 2];
 const WHEEL_SIZE: usize = 8;
 
 const BATCH: usize = 4096;
 
 /// Gets the next prime with a 2^-80 inaccuracy (cryptographically secure)
 pub fn next_prime(n: &mut BigUint) -> BigUint {
-    if &*n < &*TWO {
+    if *n < *TWO {
         return TWO.clone();
     }
 
@@ -40,7 +38,7 @@ pub fn next_prime(n: &mut BigUint) -> BigUint {
     }
 
     loop {
-        if is_probably_prime(&n, 40) {
+        if is_probably_prime(n, 40) {
             return n.clone();
         }
         *n += &*TWO;
@@ -93,7 +91,9 @@ pub fn sqrt(q: &BigRational) -> Option<BigRational> {
     let sqrt_den_candidate = den.sqrt();
 
     // Verify they are perfect squares
-    if &(&sqrt_num_candidate * &sqrt_num_candidate) == num && &(&sqrt_den_candidate * &sqrt_den_candidate) == den {
+    if &(&sqrt_num_candidate * &sqrt_num_candidate) == num
+        && &(&sqrt_den_candidate * &sqrt_den_candidate) == den
+    {
         Some(BigRational::new(sqrt_num_candidate, sqrt_den_candidate))
     } else {
         None
@@ -133,7 +133,7 @@ fn is_probably_prime(n: &BigUint, rounds: u32) -> bool {
     }
 
     for _ in 0..rounds {
-        let a = rand::thread_rng().gen_biguint_range(&*TWO, &(n - &*TWO));
+        let a = rand::thread_rng().gen_biguint_range(&TWO, &(n - &*TWO));
         let mut x = mod_pow(&a, &d, n);
 
         if x == BigUint::one() || x == n - BigUint::one() {
@@ -143,7 +143,7 @@ fn is_probably_prime(n: &BigUint, rounds: u32) -> bool {
         let mut composite = true;
 
         for _ in 0..(r - 1) {
-            x = mod_pow(&x, &*TWO, n);
+            x = mod_pow(&x, &TWO, n);
             if x == n - BigUint::one() {
                 composite = false;
                 break;
@@ -186,7 +186,6 @@ fn try_safe_prime(bits: u64) -> Option<(BigUint, BigUint)> {
     let candidates = sieve_batch(&aligned, wheel_idx);
 
     for q in candidates {
-
         if !is_probably_prime(&q, 8) {
             continue;
         }
@@ -213,7 +212,6 @@ fn sieve_batch(base: &BigUint, start_idx: usize) -> Vec<BigUint> {
     let mut idx = start_idx;
 
     for i in 0..BATCH {
-
         for (j, &p) in SMALL_PRIMES.iter().enumerate() {
             if residues[j] == 0 {
                 alive[i] = false;
@@ -305,11 +303,7 @@ pub fn extended_euclidean_algorithm(m: &BigUint, i: &BigUint) -> Option<BigUint>
 /// because each step is modulo. It also reduces the number of computations by precomputing binary
 /// powers. This implementation uses highly efficient bitwise operations to create an allocation-free
 /// implementation
-pub fn fast_exponentiation(
-    base: &BigUint,
-    exp: &BigUint,
-    modulus: &BigUint,
-) -> BigUint {
+pub fn fast_exponentiation(base: &BigUint, exp: &BigUint, modulus: &BigUint) -> BigUint {
     if modulus.is_zero() {
         panic!("Modulus cannot be zero");
     }
@@ -399,7 +393,7 @@ pub fn is_prime(n: &BigUint) -> bool {
         return false;
     }
 
-    let mut i= FIVE.clone();
+    let mut i = FIVE.clone();
     while &i * &i <= *n {
         if (n % &i).is_zero() || (n % (&i + &*TWO)).is_zero() {
             return false;
@@ -421,7 +415,7 @@ pub fn find_prime_factors(factors: &mut Vec<BigUint>, n: &BigUint) {
     // n must be odd at this point. So we can skip
     // one element (Note i = i +2)
     let mut i = THREE.clone();
-    while &i <= &n_mut.sqrt() {
+    while i <= n_mut.sqrt() {
         while (&n_mut % &i).is_zero() {
             factors.push(i.clone());
             n_mut /= &i;
@@ -429,7 +423,6 @@ pub fn find_prime_factors(factors: &mut Vec<BigUint>, n: &BigUint) {
 
         i.add_assign(&*TWO)
     }
-
 
     // This condition is to handle the case when
     // n is a prime number greater than 2
@@ -455,7 +448,7 @@ pub fn find_primitive(n: &BigUint, greater_than: &BigUint) -> BigUint {
     let phi = &n_clone.sub(BigUint::one());
 
     // Find prime factors of phi and store in a set
-    find_prime_factors(&mut factors, &phi);
+    find_prime_factors(&mut factors, phi);
 
     // Check for every number from 2 to phi
     let mut r = TWO.clone();
@@ -464,7 +457,7 @@ pub fn find_primitive(n: &BigUint, greater_than: &BigUint) -> BigUint {
         let mut flag = false;
 
         for factor in &factors {
-            if r <= *greater_than || r.modpow(&phi.div(factor), &n_clone).is_one() {
+            if r <= *greater_than || r.modpow(&phi.div(factor), n_clone).is_one() {
                 flag = true;
                 break;
             }
@@ -563,7 +556,7 @@ pub fn from_extended_binary(bytes: &[u8]) -> &[u8] {
 
 /// Tests if the first half and second half of the Chinese Remainder Theorem output are equal
 pub fn is_crt_output(bytes: &[u8]) -> bool {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return false;
     }
 
@@ -608,8 +601,8 @@ pub fn u8_to_bits_le(n: u8) -> [u8; 8] {
 /// Converts a little-endian bit array (LSB first) back to u8
 pub fn bits_to_u8_le(bits: [u8; 8]) -> u8 {
     let mut val = 0u8;
-    for i in 0..8 {
-        val |= (bits[i] & 1) << i;
+    for (i, bit) in bits.iter().enumerate() {
+        val |= (*bit & 1) << i;
     }
     val
 }
@@ -634,30 +627,29 @@ pub fn jacobi(a: &BigInt, n: &BigInt) -> i32 {
     println!("{} * {}/{}", multiplier, a_mut, n_mut);
     loop {
         // Check if a > n
-        if &a_mut > &n_mut {
+        if a_mut > n_mut {
             a_mut = &a_mut % &n_mut;
             println!("{} * {}/{}", multiplier, a_mut, n_mut);
         }
 
-        if &a_mut == &BigInt::one() {
+        if a_mut == BigInt::one() {
             // Check if numerator is 1
             return multiplier;
         } else if &a_mut % 2 == BigInt::one() {
             // Check reciprocity rules
             let a_mod = &a_mut % 4;
             let n_mod = &n_mut % 4;
-            if &a_mod != &BigInt::one() && &n_mod != &BigInt::one() {
+            if a_mod != BigInt::one() && n_mod != BigInt::one() {
                 multiplier *= -1;
             }
 
             // Swap places
             swap(&mut a_mut, &mut n_mut);
-
         } else {
             // Factor out 2s
             a_mut = &a_mut / 2;
             let modulo = &n_mut % 8;
-            if &a_mut > &BigInt::one() {
+            if a_mut > BigInt::one() {
                 println!("{} * 2/{} * {}/{}", multiplier, n_mut, a_mut, n_mut);
             }
 
