@@ -1,10 +1,13 @@
-use crate::Cryptosystems;
 use crate::basic::algorithms;
+use crate::Cryptosystems;
 use num_bigint::BigUint;
 use rand::RngCore;
 use std::fs::File;
 use std::io::Write;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::task;
+use tokio::time::timeout;
 
 const BYTE_TEST_SIZES: [usize; 10] = [
     1,          // 1 bye
@@ -21,86 +24,62 @@ const BYTE_TEST_SIZES: [usize; 10] = [
 
 const TRIALS: u8 = 10;
 
-const MAX_TRIAL_DURATION: Duration = Duration::from_secs(120);
+const MAX_TRIAL_DURATION: Duration = Duration::from_secs(240);
 
-pub fn start_benchmark(selected_cryptosystems: &[Cryptosystems]) {
-    // Store rows for the CSV as (Algorithm, Size, AvgTimeSecs, ThroughputMBs)
+pub async fn start_benchmark(selected_cryptosystems: &[Cryptosystems]) {
     let mut csv_rows = Vec::new();
 
     for cryptosystem in selected_cryptosystems {
-        if let Cryptosystems::Back = cryptosystem {
-            continue;
-        }
+        if matches!(cryptosystem, Cryptosystems::Back) { continue; }
 
         let algo_name = format!("{:?}", cryptosystem);
         println!("Benchmarking {}...", algo_name);
 
-        for &size in &BYTE_TEST_SIZES {
-            // Heuristic check to prevent starting a fail-loop
-            // Asymmetric cryptosystems are too slow for large data.
-            if is_asymmetric(cryptosystem) && size > 1_000_000 {
-                println!(
-                    "  Size {} bytes: Skipping (Asymmetric limit exceeded)",
-                    size
-                );
-                continue;
-            }
-
+        'outer: for &size in &BYTE_TEST_SIZES {
             let mut total_duration = Duration::ZERO;
             let mut trials_completed = 0;
-            let mut timed_out = false;
+
+            let mut input = vec![0u8; size];
+            rand::thread_rng().fill_bytes(&mut input);
+            let input = Arc::new(input);
 
             for _ in 0..TRIALS {
-                let mut input = vec![0u8; size];
-                rand::thread_rng().fill_bytes(&mut input);
+                let cryptosystem_clone = cryptosystem.clone();
+                let input_ref = Arc::clone(&input);
 
                 let start = Instant::now();
 
-                // Run the specific algorithm
-                run_algo(cryptosystem, &input);
+                let handle = task::spawn_blocking(move || {
+                    run_algo(&cryptosystem_clone, &input_ref);
+                });
 
-                let elapsed = start.elapsed();
-
-                // Timeout Check
-                if elapsed > MAX_TRIAL_DURATION {
-                    println!(
-                        "  Size {} bytes: Timed out (> 5 mins). Skipping remaining trials.",
-                        size
-                    );
-                    timed_out = true;
-                    break;
+                match timeout(MAX_TRIAL_DURATION, handle).await {
+                    Ok(Ok(_)) => {
+                        total_duration += start.elapsed();
+                        trials_completed += 1;
+                    }
+                    Ok(Err(e)) => {
+                        eprintln!("Task panicked: {:?}", e);
+                        break 'outer;
+                    }
+                    Err(_) => {
+                        println!("  Size {} bytes: Timed out (> 4 mins). Skipping algorithm.", size);
+                        break 'outer;
+                    }
                 }
-
-                total_duration += elapsed;
-                trials_completed += 1;
             }
 
-            // Record data if at least one trial finished without timing out
-            if trials_completed > 0 && !timed_out {
+            if trials_completed > 0 {
                 let avg_duration = total_duration / trials_completed;
                 let secs = avg_duration.as_secs_f64();
-                let mb_per_sec = (size as f64 / 1_000_000.0) / secs;
+                let kb_per_sec = (size as f64 / 1_000.0) / secs;
 
-                println!(
-                    "  Size {:>10} bytes | Avg: {:.4}s | {:.2} MB/s",
-                    size, secs, mb_per_sec
-                );
-
-                csv_rows.push(format!("{},{},{},{}", algo_name, size, secs, mb_per_sec));
+                println!("  Size {:>10} bytes | Avg: {:.4}s | {:.2} KB/s", size, secs, kb_per_sec);
+                csv_rows.push(format!("{},{},{},{}", algo_name, size, secs, kb_per_sec));
             }
         }
     }
-
-    // Export to CSV
     export_to_csv(csv_rows);
-    println!("Benchmarks completed successfully!");
-}
-
-fn is_asymmetric(c: &Cryptosystems) -> bool {
-    matches!(
-        c,
-        Cryptosystems::RSA | Cryptosystems::Rabin | Cryptosystems::Goldwasser
-    )
 }
 
 fn run_algo(c: &Cryptosystems, input: &[u8]) {
@@ -111,7 +90,7 @@ fn run_algo(c: &Cryptosystems, input: &[u8]) {
             let _ = algorithms::rsa_decrypt(&encrypt.0, &encrypt.1, &encrypt.2);
         }
         Cryptosystems::Rabin => {
-            let _ = algorithms::rabin(input);
+            let _ = algorithms::rabin(input, false);
         }
         Cryptosystems::Goldwasser => {
             let _ = algorithms::goldwasser_micali(input);

@@ -153,7 +153,7 @@ pub fn diffie_hellman(bits: u64) -> (BigUint, BigUint) {
 /// The Rabin Cryptosystem uses Blum Primes and the Extended Euclidean Algorithm to create a
 /// mathematically-proven cryptosystem for sharing information securely. It relies on
 /// quadratic residues to produce these secure keys.
-pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
+pub fn rabin(input: &[u8], debug: bool) -> (BigUint, BigUint) {
     let m_original_bytes = utils::extend_binary(input);
     let m_original = BigUint::from_bytes_le(&m_original_bytes);
 
@@ -194,7 +194,9 @@ pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
     // Chinese Remainder Theorem
     let d1 = (&y_p * &p * &q1) + (&y_q * &q * &p1);
     let d1 = utils::mod_floor(&d1, &n);
-    println!("d1 is {}", d1);
+    if debug {
+        println!("d1: {}", d1);
+    }
     let d1_bytes = d1.to_bytes_le();
     if utils::is_crt_output(&d1_bytes) {
         let output = BigUint::from_bytes_le(utils::from_extended_binary(&d1_bytes));
@@ -203,7 +205,9 @@ pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
 
     let d2 = (&y_p * &p * &q2) + (&y_q * &q * &p1);
     let d2 = utils::mod_floor(&d2, &n);
-    println!("d2 is {}", d2);
+    if debug {
+        println!("d2: {}", d2);
+    }
     let d2_bytes = &*d2.to_bytes_le();
     if utils::is_crt_output(d2_bytes) {
         let output = BigUint::from_bytes_le(utils::from_extended_binary(d2_bytes));
@@ -212,7 +216,9 @@ pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
 
     let d3 = (&y_p * &p * &q1) + (&y_q * &q * &p2);
     let d3 = utils::mod_floor(&d3, &n);
-    println!("d3 is {}", d3);
+    if debug {
+        println!("d3: {}", d3);
+    }
     let d3_bytes = &*d3.to_bytes_le();
     if utils::is_crt_output(d3_bytes) {
         let output = BigUint::from_bytes_le(utils::from_extended_binary(d3_bytes));
@@ -221,7 +227,9 @@ pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
 
     let d4 = (&y_p * &p * &q2) + (&y_q * &q * &p2);
     let d4 = utils::mod_floor(&d4, &n);
-    println!("d4 is {}", d4);
+    if debug {
+        println!("d4: {}", d4);
+    }
     let d4_bytes = &*d4.to_bytes_le();
     if utils::is_crt_output(d4_bytes) {
         let output = BigUint::from_bytes_le(utils::from_extended_binary(d4_bytes));
