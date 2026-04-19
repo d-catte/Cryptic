@@ -1,7 +1,8 @@
-use crate::basic::utils;
 use crate::basic::utils::{FOUR, TWO, is_coprime};
+use crate::basic::{aes, utils};
 use num_bigint::{BigUint, RandBigInt, ToBigInt};
 use num_traits::One;
+use rand::RngCore;
 use std::ops::{Add, Mul};
 
 /// Encrypts the bits of a String using a linear formula
@@ -234,7 +235,7 @@ pub fn rabin(input: &[u8]) -> (BigUint, BigUint) {
 /// that relies on quadratic residues' difficulty in factoring (prime factorization).
 /// This cryptosystem is rarely used as the encrypted data is often significantly larger than
 /// the inputted data, which can cause issues when sending data over the internet.
-pub fn goldwasser_micali(input: &[u8]) -> (BigUint, String) {
+pub fn goldwasser_micali(input: &[u8]) -> (BigUint, Vec<u8>) {
     let m_original = BigUint::from_bytes_le(input);
 
     // Choose N so that m_original < n
@@ -296,7 +297,92 @@ pub fn goldwasser_micali(input: &[u8]) -> (BigUint, String) {
         bytes.push(last_byte);
     }
 
-    let decrypted_str = String::from_utf8(bytes).unwrap();
+    (encrypted_val, bytes)
+}
 
-    (encrypted_val, decrypted_str)
+/// AES is one of the most widely used forms of data encryption and decryption.
+/// The main reason for its adoption is its computational simplicity.
+/// The same algorithm can be used to encrypt and decrypt the data.
+/// It utilizes a property of XOR that states that any data passed through an XOR mask can
+/// be reverted back to the original data using the same XOR mask
+pub fn aes(input: &[u8]) -> (BigUint, Vec<u8>) {
+    // - ENCRYPTION -
+
+    // Setup Key and Nonce
+    // In AES-256, the key must be 32 bytes.
+    // In the real world, this key would be exchanged using Diffie-Hellman
+    let mut key: [u8; 32] = [0x0; 32];
+    rand::thread_rng().fill_bytes(&mut key);
+
+    // 96-bit Nonce for CTR mode
+    let mut nonce: [u8; 12] = [0x0; 12];
+    rand::thread_rng().fill_bytes(&mut nonce); // 96-bit Nonce for CTR mode
+
+    let mut buffer = input.to_vec();
+
+    // Encrypt the data
+    aes::ctr_256(&key, nonce, &mut buffer);
+
+    // Prepend the nonce to the data
+    // Send this data to the receiver
+    let mut transmitted_data = nonce.to_vec();
+    transmitted_data.extend_from_slice(&buffer);
+
+    let encrypted_biguint = BigUint::from_bytes_be(&transmitted_data);
+
+    // - DECRYPTION -
+
+    // Extract the nonce from the start
+    let received_nonce = &transmitted_data[0..12];
+    let mut ciphertext = transmitted_data[12..].to_vec();
+
+    // Decrypt using the extracted nonce
+    let mut nonce_array = [0u8; 12];
+    nonce_array.copy_from_slice(received_nonce);
+
+    aes::ctr_256(&key, nonce_array, &mut ciphertext);
+
+    (encrypted_biguint, ciphertext)
+}
+
+/// The same implementation as `aes`, but utilizes multiple threads to compute large encryption
+/// tasks considerably faster
+pub fn aes_parallel(input: &[u8]) -> (BigUint, Vec<u8>) {
+    // - ENCRYPTION -
+
+    // Setup Key and Nonce
+    // In AES-256, the key must be 32 bytes.
+    // In the real world, this key would be exchanged using Diffie-Hellman
+    let mut key: [u8; 32] = [0x0; 32];
+    rand::thread_rng().fill_bytes(&mut key);
+
+    // 96-bit Nonce for CTR mode
+    let mut nonce: [u8; 12] = [0x0; 12];
+    rand::thread_rng().fill_bytes(&mut nonce); // 96-bit Nonce for CTR mode
+
+    let mut buffer = input.to_vec();
+
+    // Encrypt the data in parallel
+    aes::parallel_ctr_256(&key, nonce, &mut buffer);
+
+    // Prepend the nonce to the data
+    // Send this data to the receiver
+    let mut transmitted_data = nonce.to_vec();
+    transmitted_data.extend_from_slice(&buffer);
+
+    let encrypted_biguint = BigUint::from_bytes_be(&transmitted_data);
+
+    // - DECRYPTION -
+
+    // Extract the nonce from the start
+    let received_nonce = &transmitted_data[0..12];
+    let mut ciphertext = transmitted_data[12..].to_vec();
+
+    // Decrypt using the extracted nonce
+    let mut nonce_array = [0u8; 12];
+    nonce_array.copy_from_slice(received_nonce);
+
+    aes::parallel_ctr_256(&key, nonce_array, &mut ciphertext);
+
+    (encrypted_biguint, ciphertext)
 }
