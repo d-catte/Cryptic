@@ -107,7 +107,7 @@ fn run_algo(c: &Cryptosystems, input: &[u8]) {
 
 fn export_to_csv(rows: Vec<String>) {
     let mut file = File::create("benchmark_results.csv").expect("Unable to create file");
-    writeln!(file, "Algorithm,ByteSize,AverageTimeSeconds,ThroughputMBps").unwrap();
+    writeln!(file, "Algorithm,ByteSize,AverageTimeSeconds,ThroughputKBps").unwrap();
     for row in rows {
         writeln!(file, "{}", row).unwrap();
     }
